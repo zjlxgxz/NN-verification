@@ -14,6 +14,10 @@ from sklearn.metrics import roc_auc_score
 from tqdm import tqdm as tqdm
 import json
 
+res_path = '/Users/xingzhiguo/Documents/git_project/NN-verification/results'
+cache_path = '/Users/xingzhiguo/Documents/git_project/NN-verification/cache'
+
+
 def sigmoid(z):
     return 1/(1 + np.exp(-z))
 
@@ -65,14 +69,12 @@ def collate_fn(batch):
     return (X, y, y_2year)
 
 
-def main(random_seed):
+def main(random_seed, is_race_permute):
     RS = np.random.RandomState(random_seed)
     random.seed(random_seed)
     torch.manual_seed(random_seed)
 
     #data_path = '/Users/xingzhiguo/Documents/git_project/NN-verification/data'
-    res_path = '/Users/xingzhiguo/Documents/git_project/NN-verification/results'
-    cache_path = '/Users/xingzhiguo/Documents/git_project/NN-verification/cache'
     
     # read data from cache
     cache_file_path = os_join(cache_path,f'np-data-rs={random_seed}.pkl')
@@ -84,6 +86,12 @@ def main(random_seed):
     y_dev = data_dict["y_dev"]
     X_test = data_dict["X_test"]
     y_test = data_dict["y_test"]
+    
+    if is_race_permute:
+        # permute the protected features inplace
+        RS.shuffle(X_train[:,2])
+        print ('permute race attribute')
+        
     print ('Train feature/label shape:',X_train.shape, y_train.shape)
     print ('Dev. feature/label shape:',X_dev.shape, y_dev.shape)
     print ('Test feature/label shape:',X_test.shape, y_test.shape)
@@ -99,7 +107,7 @@ def main(random_seed):
     model, train_stats, dev_stats, test_stats = train_loop(RS, train_dataset, dev_dataset, test_dataset, max_epoch, train_bs, eval_bs, lr=lr)
     
     # save model, with dev/test results
-    model_save_dir = os_join(res_path, f'max_epoch={max_epoch}-train_bs={train_bs}-random_seed={random_seed}')
+    model_save_dir = os_join(res_path, f'max_epoch={max_epoch}-train_bs={train_bs}-random_seed={random_seed}-race_permute={is_race_permute}')
     if not os.path.exists(model_save_dir):
         os.makedirs(model_save_dir)
     model_save(model, model_save_dir, train_stats, dev_stats, test_stats)
@@ -223,15 +231,71 @@ def model_save(model, path, train_stats, dev_stats, test_stats):
         }
         json_str = json.dumps(output_dict)
         f.write(json_str)
-        # print ('Train Stats:',file=f)
-        # pprint.pprint(train_stats, f)
-        # print ('\n',file=f)
-        # print ('Dev Stats:',file=f)
-        # pprint.pprint(dev_stats, f)
-        # print ('\n',file=f)
-        # print ('Test Stats:',file=f)
-        # pprint.pprint(test_stats, f)
+
+def load_model_and_eval():
+    """load the model and play with it"""
+    max_epoch = 10
+    train_bs = 32
+    random_seed = 0
+
+    model = SimpleNet()
+    model_save_dir = os_join(res_path, f'max_epoch={max_epoch}-train_bs={train_bs}-random_seed={random_seed}/model.ckpt')
+    model.load_state_dict(torch.load(model_save_dir))
+    model.eval()
+    
+    cache_file_path = os_join(cache_path,f'np-data-rs={random_seed}.pkl')
+    with open(cache_file_path, 'rb') as f:
+        data_dict = pickle.load(f)
+    X_train = data_dict["X_train"]
+    y_train = data_dict["y_train"]
+    X_dev = data_dict["X_dev"]
+    y_dev = data_dict["y_dev"]
+    X_test = data_dict["X_test"]
+    y_test = data_dict["y_test"]
+    print ('Train feature/label shape:',X_train.shape, y_train.shape)
+    print ('Dev. feature/label shape:',X_dev.shape, y_dev.shape)
+    print ('Test feature/label shape:',X_test.shape, y_test.shape)
+    
+    # get dataset
+    train_dataset = SimpleDataset(X_train, y_train)
+    dev_dataset = SimpleDataset(X_dev, y_dev)
+    test_dataset = SimpleDataset(X_test, y_test)
+    
+    # get dataloader
+    train_loader = torch.utils.data.DataLoader( train_dataset, batch_size=train_bs, shuffle=True, num_workers=1, collate_fn = collate_fn )
+    # dev_loader = torch.utils.data.DataLoader( dev_dataset, batch_size=train_bs, shuffle=False, num_workers=1, collate_fn = collate_fn)
+    # test_loader = torch.utils.data.DataLoader( test_dataset, batch_size=train_bs, shuffle=False, num_workers=1, collate_fn = collate_fn)
+
+    _loss = []
+    _y_pred = []
+    _y = []
+    _x = []
+    model.eval()
+    for x, y, y_2year in train_loader:
+        dev_loss, y_pred = model.loss(x, y)
+        _loss.append(dev_loss)
+        _x.append(x.detach().numpy())
+        _y_pred.append(y_pred.detach().numpy().reshape(-1))
+        _y.append(y.detach().numpy().reshape(-1))
+    _tensor_loss = torch.tensor(_loss, dtype = torch.float)
+    dev_mean_loss = _tensor_loss.mean().detach().numpy().reshape(-1).item() 
+    _y = np.hstack(_y)
+    _y_pred = np.hstack(_y_pred)
+    _x = np.vstack(_x)
+    dev_auc = eval_model_metric(_y_pred, _y)
+    print ('input:')
+    print (_x[:5])
+    print ('raw-output:')
+    print (_y_pred[:5])
+    print ('Sigmoid(raw-output):')
+    print (sigmoid(_y_pred[:5]))
+    print ('Ground truth:')
+    print (_y[:5])
+    
+
 
 if __name__ == '__main__':
-    for randseed in range(3): # repeat for 5 times
-        main(random_seed = randseed)
+    # training 
+    is_race_permute = True 
+    for randseed in range(3): # repeat for 3 times
+        main(random_seed = randseed, is_race_permute = is_race_permute)
