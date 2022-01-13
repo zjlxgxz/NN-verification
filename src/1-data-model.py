@@ -40,7 +40,6 @@ class SimpleNet(nn.Module):
         y_pred = self.forward(X).ravel()
         return self.criterion(y_pred, y), y_pred
 
-
 class SimpleDataset(torch.utils.data.Dataset):
     def __init__(self, X, y):
         self.X = X
@@ -55,6 +54,7 @@ class SimpleDataset(torch.utils.data.Dataset):
     def __getitem__(self, index: int):
         return [self.X[index,:], self.y[index], self.y_2year[index]]
 
+
 def collate_fn(batch):
     X = [  _[0] for _ in batch] #  # float tensor
     y = [  _[1] for _ in batch] # long tensor
@@ -67,7 +67,6 @@ def collate_fn(batch):
     #y = torch.LongTensor(np.array(y))
     #y_2year = torch.LongTensor(np.array(y_2year))
     return (X, y, y_2year)
-
 
 def main(random_seed, is_race_permute):
     RS = np.random.RandomState(random_seed)
