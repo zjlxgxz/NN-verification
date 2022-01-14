@@ -22,11 +22,12 @@ def sigmoid(z):
     return 1/(1 + np.exp(-z))
 
 
-class SimpleNet(nn.Module):
+class SimpleNet_3_8(nn.Module):
     def __init__(self, input_dim):
-        super(SimpleNet, self).__init__()
+        super(SimpleNet_3_8, self).__init__()
         self.fc1 = nn.Linear(input_dim, 8)
         self.fc2 = nn.Linear(8, 8)
+        self.fc3 = nn.Linear(8, 8)
         self.out = nn.Linear(8, 1)
         self.criterion = torch.nn.BCEWithLogitsLoss()
         # init weights ?
@@ -34,12 +35,37 @@ class SimpleNet(nn.Module):
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
         x = self.out(x) # raw digits
         return x
     
     def loss(self, X, y):
         y_pred = self.forward(X).ravel()
         return self.criterion(y_pred, y), y_pred
+
+class SimpleNet_4_8(nn.Module):
+    def __init__(self, input_dim):
+        super(SimpleNet_4_8, self).__init__()
+        self.fc1 = nn.Linear(input_dim, 8)
+        self.fc2 = nn.Linear(8, 8)
+        self.fc3 = nn.Linear(8, 8)
+        self.fc4 = nn.Linear(8, 8)
+        self.out = nn.Linear(8, 1)
+        self.criterion = torch.nn.BCEWithLogitsLoss()
+        # init weights ?
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = F.relu(self.fc4(x))
+        x = self.out(x) # raw digits
+        return x
+    
+    def loss(self, X, y):
+        y_pred = self.forward(X).ravel()
+        return self.criterion(y_pred, y), y_pred
+
 
 class SimpleDataset(torch.utils.data.Dataset):
     def __init__(self, X, y):
@@ -69,7 +95,23 @@ def collate_fn(batch):
     #y_2year = torch.LongTensor(np.array(y_2year))
     return (X, y, y_2year)
 
-def main(random_seed, is_race_permute, is_sex_permute):
+
+def stratify_permute_row_inplace(a, reference_col_ind, permute_col_ind, RS):
+    ref_col_vals = a[:,reference_col_ind]
+    unique_val_in_ref_col = np.unique(ref_col_vals)
+
+    for _val in unique_val_in_ref_col:
+        row_group_index = np.where( (ref_col_vals==_val).all(1), 1, 0).nonzero()[0]
+        #print (0, _val, row_group_index)
+        _permute_col_of_row = a[np.ix_(row_group_index, permute_col_ind)]
+        #print (1,_permute_col_of_row)
+        permuted_permute_col_of_row = RS.permutation(_permute_col_of_row)
+        #print (2,permuted_permute_col_of_row)
+        a[np.ix_(row_group_index, permute_col_ind)] = permuted_permute_col_of_row
+        
+
+
+def main(random_seed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config):
     RS = np.random.RandomState(random_seed)
     random.seed(random_seed)
     torch.manual_seed(random_seed)
@@ -87,19 +129,24 @@ def main(random_seed, is_race_permute, is_sex_permute):
     input_shape = X_train.shape[1]
     
     if is_race_permute:
-        #input_feature_list = [age_feat, edu_feat, capital_gain_feat, capital_loss_feat ,sex_feat, hours_per_week_feat, gdp_pc_feat, race_feat]
-        # permute the protected features inplace
-        RS.shuffle(X_train[:,:7])
-        print ('permute race attribute')
+        # input_feature_list = [age_feat, edu_feat, hours_per_week_feat, sex_feat, race_feat]
+        print ('permute race attribute in a stratify manner')
+        reference_col_ind = [3]
+        permute_col_ind = [4,5,6,7,8] # permute 4-8 features wrt 3
+        stratify_permute_row_inplace(X_train, reference_col_ind, permute_col_ind, RS)
+        
     # permute gender
     if is_sex_permute:
         #input_feature_list = [age_feat, edu_feat, capital_gain_feat, capital_loss_feat ,sex_feat, hours_per_week_feat, gdp_pc_feat, race_feat]
         # permute the protected features inplace
-        RS.shuffle(X_train[:,4])
-        print ('permute sex attribute')
+        print ('permute sex attribute in a stratify manner')
+        reference_col_ind = [4,5,6,7,8] 
+        permute_col_ind = [3] # permute 3 features wrt 4-8
+        stratify_permute_row_inplace(X_train, reference_col_ind, permute_col_ind, RS)
+    if is_sex_race_both_permute:
+        print ('permute both sex and race attributes')
+        RS.shuffle(X_train[:3])
 
-    
-    # permute martial status
         
     print ('Train feature/label shape:',X_train.shape, y_train.shape)
     print ('Dev. feature/label shape:',X_dev.shape, y_dev.shape)
@@ -113,19 +160,27 @@ def main(random_seed, is_race_permute, is_sex_permute):
     train_bs = 32
     eval_bs = 128
     lr = 0.01
-    model, train_stats, dev_stats, test_stats = train_loop(RS, train_dataset, dev_dataset, test_dataset, max_epoch, train_bs, eval_bs, lr=lr, input_shape = input_shape )
+    model, train_stats, dev_stats, test_stats = train_loop(RS, train_dataset, dev_dataset, test_dataset, max_epoch, train_bs, eval_bs, lr=lr, input_shape = input_shape, model_config = model_config )
     
     # save model, with dev/test results
-    model_save_dir = os_join(res_path, f'adult-max_epoch={max_epoch}-train_bs={train_bs}-random_seed={random_seed}-race_permute={is_race_permute}')
+    model_save_dir = os_join(res_path, f'adult-model_config-{model_config}-max_epoch={max_epoch}-train_bs={train_bs}-random_seed={random_seed}-is_random_weight-{is_random_weight}-race_permute={is_race_permute}-sex_permute={is_sex_permute}-both_sex_race_permute={is_sex_race_both_permute}')
+    print (f'saving to : {model_save_dir}')
     if not os.path.exists(model_save_dir):
         os.makedirs(model_save_dir)
     model_save(model, model_save_dir, train_stats, dev_stats, test_stats, input_shape)
     
 
-def train_loop(RS, train_dataset, dev_dataset, test_dataset, max_epoch, train_bs, eval_bs, lr = 0.01, input_shape = 10):
+def train_loop(RS, train_dataset, dev_dataset, test_dataset, max_epoch, train_bs, eval_bs, lr = 0.01, input_shape = 10, is_random_weight = False, model_config = 'small'):
     # let's use cpu parameter
-    model= SimpleNet(input_shape)
-    
+    if model_config == 'small':
+        model= SimpleNet_3_8(input_shape)
+    if model_config == 'medium':
+        model= SimpleNet_4_8(input_shape)
+    # if model_config == 'big':
+    #     model= SimpleNet_3_8(input_shape)
+    if is_random_weight: # random weight.
+        return model, {}, {},{}
+
     # let' use adam 
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
@@ -305,6 +360,48 @@ def model_save(model, path, train_stats, dev_stats, test_stats, input_shape):
 
 if __name__ == '__main__':
     # training 
-    is_race_permute = False 
-    for randseed in range(3): # repeat for 3 times
-        main(random_seed = randseed, is_race_permute = is_race_permute)
+    
+    model_configs = ['small','medium']
+    num_random_seed = 1
+    
+    for model_config in model_configs:
+        # normal model
+        is_race_permute = False 
+        is_sex_permute =  False
+        is_sex_race_both_permute = False
+        is_random_weight = False
+        for randseed in range(num_random_seed): # repeat for 3 times
+            main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
+
+        # random model
+        is_race_permute = False 
+        is_sex_permute =  False
+        is_sex_race_both_permute = False
+        is_random_weight = True
+        for randseed in range(num_random_seed): # repeat for 3 times
+            main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
+
+        # race-permute only model
+        is_race_permute = True 
+        is_sex_permute =  False
+        is_sex_race_both_permute = False
+        is_random_weight = False
+        for randseed in range(num_random_seed): # repeat for 3 times
+            main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
+
+        # sex-permute only model
+        is_race_permute = False 
+        is_sex_permute =  True
+        is_sex_race_both_permute = False
+        is_random_weight = False
+        for randseed in range(num_random_seed): # repeat for 3 times
+            main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
+            
+        # both-sex-race-permute model
+        is_race_permute = False 
+        is_sex_permute =  False
+        is_sex_race_both_permute = True
+        is_random_weight = False
+        for randseed in range(num_random_seed): # repeat for 3 times
+            main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
+
