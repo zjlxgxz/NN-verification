@@ -1,5 +1,5 @@
 # Repository for NN-verification
-folder data contains raw data from COMPAS analysis
+folder data contains raw data from COMPAS/Adult analysis
 
 folder src contains all python scripts for data clean and model training 
 
