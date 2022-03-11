@@ -160,7 +160,7 @@ def main(random_seed, is_race_permute, is_sex_permute, is_sex_race_both_permute,
     train_bs = 32
     eval_bs = 128
     lr = 0.01
-    model, train_stats, dev_stats, test_stats = train_loop(RS, train_dataset, dev_dataset, test_dataset, max_epoch, train_bs, eval_bs, lr=lr, input_shape = input_shape, model_config = model_config )
+    model, train_stats, dev_stats, test_stats = train_loop(RS, train_dataset, dev_dataset, test_dataset, max_epoch, train_bs, eval_bs, lr=lr, input_shape = input_shape, is_random_weight= is_random_weight, model_config = model_config )
     
     # save model, with dev/test results
     model_save_dir = os_join(res_path, f'adult-model_config-{model_config}-max_epoch={max_epoch}-train_bs={train_bs}-random_seed={random_seed}-is_random_weight-{is_random_weight}-race_permute={is_race_permute}-sex_permute={is_sex_permute}-both_sex_race_permute={is_sex_race_both_permute}')
@@ -365,6 +365,7 @@ if __name__ == '__main__':
     num_random_seed = 1
     
     for model_config in model_configs:
+        """
         # normal model
         is_race_permute = False 
         is_sex_permute =  False
@@ -372,7 +373,8 @@ if __name__ == '__main__':
         is_random_weight = False
         for randseed in range(num_random_seed): # repeat for 3 times
             main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
-
+        """
+        
         # random model
         is_race_permute = False 
         is_sex_permute =  False
@@ -381,6 +383,7 @@ if __name__ == '__main__':
         for randseed in range(num_random_seed): # repeat for 3 times
             main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
 
+        """
         # race-permute only model
         is_race_permute = True 
         is_sex_permute =  False
@@ -405,3 +408,4 @@ if __name__ == '__main__':
         for randseed in range(num_random_seed): # repeat for 3 times
             main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
 
+        """
