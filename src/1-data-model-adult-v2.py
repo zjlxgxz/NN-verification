@@ -98,7 +98,7 @@ def collate_fn(batch):
 
 def stratify_permute_row_inplace(a, reference_col_ind, permute_col_ind, RS):
     ref_col_vals = a[:,reference_col_ind]
-    unique_val_in_ref_col = np.unique(ref_col_vals)
+    unique_val_in_ref_col = np.unique(ref_col_vals, axis=0)
 
     for _val in unique_val_in_ref_col:
         row_group_index = np.where( (ref_col_vals==_val).all(1), 1, 0).nonzero()[0]
@@ -133,7 +133,7 @@ def main(random_seed, is_race_permute, is_sex_permute, is_sex_race_both_permute,
         # input_feature_list = [age_feat, edu_feat, hours_per_week_feat, sex_feat, race_feat]
         print ('permute race attribute in a stratify manner')
         reference_col_ind = [3]
-        permute_col_ind = [4] # permute 4-8 features wrt 3
+        permute_col_ind = [4] #
         stratify_permute_row_inplace(X_train, reference_col_ind, permute_col_ind, RS)
     
     # permute gender
@@ -367,7 +367,6 @@ if __name__ == '__main__':
     num_random_seed = 1
     
     for model_config in model_configs:
-        """
         # normal model
         is_race_permute = False 
         is_sex_permute =  False
@@ -375,7 +374,6 @@ if __name__ == '__main__':
         is_random_weight = False
         for randseed in range(num_random_seed): # repeat for 3 times
             main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
-        """
         
         # random model
         is_race_permute = False 
@@ -385,7 +383,6 @@ if __name__ == '__main__':
         for randseed in range(num_random_seed): # repeat for 3 times
             main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
 
-        """
         # race-permute only model
         is_race_permute = True 
         is_sex_permute =  False
@@ -410,4 +407,3 @@ if __name__ == '__main__':
         for randseed in range(num_random_seed): # repeat for 3 times
             main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
 
-        """

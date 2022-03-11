@@ -98,7 +98,7 @@ def collate_fn(batch):
 
 def stratify_permute_row_inplace(a, reference_col_ind, permute_col_ind, RS):
     ref_col_vals = a[:,reference_col_ind]
-    unique_val_in_ref_col = np.unique(ref_col_vals)
+    unique_val_in_ref_col = np.unique(ref_col_vals, axis=0)
 
     for _val in unique_val_in_ref_col:
         row_group_index = np.where( (ref_col_vals==_val).all(1), 1, 0).nonzero()[0]
@@ -108,7 +108,6 @@ def stratify_permute_row_inplace(a, reference_col_ind, permute_col_ind, RS):
         permuted_permute_col_of_row = RS.permutation(_permute_col_of_row)
         #print (2,permuted_permute_col_of_row)
         a[np.ix_(row_group_index, permute_col_ind)] = permuted_permute_col_of_row
-        
 
 
 def main(random_seed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config):
@@ -137,7 +136,6 @@ def main(random_seed, is_race_permute, is_sex_permute, is_sex_race_both_permute,
         
     # permute gender
     if is_sex_permute:
-        #input_feature_list = [age_feat, edu_feat, capital_gain_feat, capital_loss_feat ,sex_feat, hours_per_week_feat, gdp_pc_feat, race_feat]
         # permute the protected features inplace
         print ('permute sex attribute in a stratify manner')
         reference_col_ind = [4,5,6,7,8] 
@@ -145,9 +143,8 @@ def main(random_seed, is_race_permute, is_sex_permute, is_sex_race_both_permute,
         stratify_permute_row_inplace(X_train, reference_col_ind, permute_col_ind, RS)
     if is_sex_race_both_permute:
         print ('permute both sex and race attributes')
-        RS.shuffle(X_train[:3])
+        RS.shuffle(X_train[:,3:])
 
-        
     print ('Train feature/label shape:',X_train.shape, y_train.shape)
     print ('Dev. feature/label shape:',X_dev.shape, y_dev.shape)
     print ('Test feature/label shape:',X_test.shape, y_test.shape)
@@ -365,7 +362,6 @@ if __name__ == '__main__':
     num_random_seed = 1
     
     for model_config in model_configs:
-        """
         # normal model
         is_race_permute = False 
         is_sex_permute =  False
@@ -373,7 +369,6 @@ if __name__ == '__main__':
         is_random_weight = False
         for randseed in range(num_random_seed): # repeat for 3 times
             main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
-        """
         
         # random model
         is_race_permute = False 
@@ -383,7 +378,6 @@ if __name__ == '__main__':
         for randseed in range(num_random_seed): # repeat for 3 times
             main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
 
-        """
         # race-permute only model
         is_race_permute = True 
         is_sex_permute =  False
@@ -408,4 +402,3 @@ if __name__ == '__main__':
         for randseed in range(num_random_seed): # repeat for 3 times
             main(randseed, is_race_permute, is_sex_permute, is_sex_race_both_permute, is_random_weight, model_config)
 
-        """
