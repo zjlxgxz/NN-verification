@@ -16,9 +16,10 @@ from sklearn.metrics import roc_auc_score
 from tqdm import tqdm as tqdm
 import json
 
-res_path = '/Users/xingzhiguo/Documents/git_project/NN-verification/results'
-cache_path = '/Users/xingzhiguo/Documents/git_project/NN-verification/cache'
+res_path = '../results'
+cache_path = '../cache'
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def sigmoid(z):
     return 1/(1 + np.exp(-z))
@@ -198,7 +199,7 @@ def main(random_seed, is_race_permute, is_sex_permute, is_sex_race_both_permute,
     print (f'saving to : {model_save_dir}')
     if not os.path.exists(model_save_dir):
         os.makedirs(model_save_dir)
-    model_save(model, model_save_dir, train_stats, dev_stats, test_stats, input_shape)
+    model_save(model, model_save_dir, train_stats, dev_stats, test_stats, input_shape, model_config)
     
 def main_based_on_sym_diff(random_seed, is_race_permute, is_sex_permute, is_sex_race_both_permute, 
             is_random_weight, 
@@ -272,7 +273,7 @@ def main_based_on_sym_diff(random_seed, is_race_permute, is_sex_permute, is_sex_
         print (f'saving to : {model_save_dir}')
         if not os.path.exists(model_save_dir):
             os.makedirs(model_save_dir)
-        model_save_iter(model, model_save_dir, train_stats, dev_stats, test_stats, input_shape, _, train_dataset)
+        model_save_iter(model, model_save_dir, train_stats, dev_stats, test_stats, input_shape, _, train_dataset, model_config)
         
         # do training_set 
         if is_fair_train_remove_sym_diff is True:
@@ -325,8 +326,10 @@ def get_sym_diff_dataset_idx(flip_index, train_dataset, model):
     train_loader = torch.utils.data.DataLoader( train_dataset, batch_size=32, shuffle=False , 
                                                 num_workers=1, collate_fn = collate_fn )
     for x, y, y_2year in train_loader:
+        x = x.to(device)
+        y = y.to(device)
         dev_loss, y_pred = model.loss(x, y)
-        _y_pred.append(y_pred.detach().numpy().reshape(-1))
+        _y_pred.append(y_pred.detach().cpu().numpy().reshape(-1))
     _y_pred = expit(np.hstack(_y_pred))
     
     # flipped dataset
@@ -334,8 +337,10 @@ def get_sym_diff_dataset_idx(flip_index, train_dataset, model):
     train_loader = torch.utils.data.DataLoader( train_dataset, batch_size=32, shuffle=False , 
                                                 num_workers=1, collate_fn = partial(collate_fn_flip, flip_index = flip_index) )
     for x, y, y_2year in train_loader:
+        x = x.to(device)
+        y = y.to(device)
         dev_loss, y_pred = model.loss(x, y)
-        _y_pred_flip.append(y_pred.detach().numpy().reshape(-1))
+        _y_pred_flip.append(y_pred.detach().cpu().numpy().reshape(-1))
     _y_pred_flip = expit(np.hstack(_y_pred_flip))
     # print (_y_pred.shape, _y_pred_flip.shape)
     # print (_y_pred[:5], _y_pred_flip[:5])
@@ -360,6 +365,7 @@ def train_loop(RS, train_dataset, dev_dataset, test_dataset, max_epoch, train_bs
 
     # let' use adam 
     optimizer = optim.Adam(model.parameters(), lr=lr)
+    model.to(device)
     
     # get dataloader
     train_loader = torch.utils.data.DataLoader( train_dataset, batch_size=train_bs, shuffle=False , num_workers=1, collate_fn = collate_fn )
@@ -387,13 +393,15 @@ def train_loop(RS, train_dataset, dev_dataset, test_dataset, max_epoch, train_bs
         model.train()
         _train_loss = []
         for x, y, y_2year in train_loader:
+            x = x.to(device)
+            y = y.to(device)
             optimizer.zero_grad()
             loss, y_pred = model.loss(x, y)
             loss.backward()
             optimizer.step()
             _train_loss.append(loss)
         _tensor_train_loss = torch.tensor(_train_loss, dtype = torch.float)
-        train_mean_loss = _tensor_train_loss.mean().detach().numpy().reshape(-1).item() 
+        train_mean_loss = _tensor_train_loss.mean().detach().cpu().numpy().reshape(-1).item() 
         train_loss_history.append(train_mean_loss)
         print (f'epoch: {epoch} \t train-loss: {train_mean_loss}')
     
@@ -424,12 +432,14 @@ def eval_model(model, d_loader):
     _y = []
     model.eval()
     for x, y, y_2year in d_loader:
+        x = x.to(device)
+        y = y.to(device)
         dev_loss, y_pred = model.loss(x, y)
         _loss.append(dev_loss)
-        _y_pred.append(y_pred.detach().numpy().reshape(-1))
-        _y.append(y.detach().numpy().reshape(-1))
+        _y_pred.append(y_pred.detach().cpu().numpy().reshape(-1))
+        _y.append(y.detach().cpu().numpy().reshape(-1))
     _tensor_loss = torch.tensor(_loss, dtype = torch.float)
-    dev_mean_loss = _tensor_loss.mean().detach().numpy().reshape(-1).item() 
+    dev_mean_loss = _tensor_loss.mean().detach().cpu().numpy().reshape(-1).item() 
     _y = np.hstack(_y)
     _y_pred = np.hstack(_y_pred)
     dev_auc = eval_model_metric(_y_pred, _y)
@@ -441,16 +451,22 @@ def eval_model_metric(y_pred, y):
     auc = roc_auc_score(y, y_pred)
     return auc
 
-def model_save(model, path, train_stats, dev_stats, test_stats, input_shape):
+def model_save(model, path, train_stats, dev_stats, test_stats, input_shape, model_config):
     """save model with assigned path"""
     model.eval() 
     # traditional save
     torch.save(model.state_dict(), os_join(path, "model.ckpt"))
 
+    if model_config == 'small' :
+        model_cpu= SimpleNet_3_8(input_shape)
+    if model_config == 'medium':
+        model_cpu= SimpleNet_4_8(input_shape)
+    model_cpu.load_state_dict(torch.load(os_join(path, "model.ckpt"), map_location=torch.device('cpu')))
+
     # onnx
     dummy_input = torch.randn(1, input_shape, requires_grad=True) # input 
     torch.onnx.export(
-        model,         # model being run
+        model_cpu,         # model being run
         dummy_input,       # model input (or a tuple for multiple inputs)
         os_join(path, "model.onnx"),       # where to save the model
         export_params=True,  # store the trained parameter weights inside the model file
@@ -473,16 +489,22 @@ def model_save(model, path, train_stats, dev_stats, test_stats, input_shape):
         json_str = json.dumps(output_dict)
         f.write(json_str)
 
-def model_save_iter(model, path, train_stats, dev_stats, test_stats, input_shape, K, train_dataset):
+def model_save_iter(model, path, train_stats, dev_stats, test_stats, input_shape, K, train_dataset, model_config):
     """save model with assigned path"""
     model.eval() 
     # traditional save
     torch.save(model.state_dict(), os_join(path, f'model-iter-{K}.ckpt'))
 
+    if model_config == 'small':
+        model_cpu= SimpleNet_3_8(input_shape)
+    if model_config == 'medium':
+        model_cpu= SimpleNet_4_8(input_shape)
+    model_cpu.load_state_dict(torch.load(os_join(path, f'model-iter-{K}.ckpt'), map_location=torch.device('cpu')))
+
     # onnx
-    dummy_input = torch.randn(1, input_shape, requires_grad=True) # input 
+    dummy_input = torch.randn(1, input_shape, requires_grad=True)# input 
     torch.onnx.export(
-        model,         # model being run
+        model_cpu,         # model being run
         dummy_input,       # model input (or a tuple for multiple inputs)
         os_join(path, f'model-iter-{K}.onnx'),       # where to save the model
         export_params=True,  # store the trained parameter weights inside the model file
@@ -510,7 +532,7 @@ def model_save_iter(model, path, train_stats, dev_stats, test_stats, input_shape
 if __name__ == '__main__':
     # training 
     
-    model_configs = ['small','medium']
+    model_configs = ['small', 'medium'] 
     num_random_seed = 5
     
     
@@ -530,6 +552,7 @@ if __name__ == '__main__':
                 is_fair_train_flip_duplicate_sym_diff,
                 is_fair_train_iter_flip_duplicate_sym_diff,
                 model_config)
+        torch.cuda.empty_cache()
         
         # random model
         is_race_permute = False 
@@ -546,7 +569,8 @@ if __name__ == '__main__':
                 is_fair_train_flip_duplicate_sym_diff,
                 is_fair_train_iter_flip_duplicate_sym_diff,
                 model_config)
-
+        torch.cuda.empty_cache()
+        
         # race-permute only model
         is_race_permute = True 
         is_sex_permute =  False
@@ -562,7 +586,8 @@ if __name__ == '__main__':
                 is_fair_train_flip_duplicate_sym_diff,
                 is_fair_train_iter_flip_duplicate_sym_diff,
                 model_config)
-
+        torch.cuda.empty_cache()
+        
         # sex-permute only model
         is_race_permute = False 
         is_sex_permute =  True
@@ -578,6 +603,7 @@ if __name__ == '__main__':
                 is_fair_train_flip_duplicate_sym_diff,
                 is_fair_train_iter_flip_duplicate_sym_diff,
                 model_config)
+        torch.cuda.empty_cache()
         
         # both-sex-race-permute model
         is_race_permute = False 
@@ -594,6 +620,7 @@ if __name__ == '__main__':
                 is_fair_train_flip_duplicate_sym_diff,
                 is_fair_train_iter_flip_duplicate_sym_diff,
                 model_config)
+        torch.cuda.empty_cache()
         
         # based on sym diff
         # remove sym diff and re-train
@@ -614,6 +641,7 @@ if __name__ == '__main__':
                     model_config)
             except Exception as e:
                 print (e)
+        torch.cuda.empty_cache()
         
         # based on sym diff
         # duplicate sym diff and re-train
@@ -634,7 +662,7 @@ if __name__ == '__main__':
                     model_config)
             except Exception as e:
                 print (e)
-        
+        torch.cuda.empty_cache()
 
         # based on sym diff
         # duplicate sym diff and incrementally train
