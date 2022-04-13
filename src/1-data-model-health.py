@@ -539,11 +539,12 @@ def model_save_iter(model, path, train_stats, dev_stats, test_stats, input_shape
 if __name__ == '__main__':
     # training 
     
-    model_configs = ['small', 'medium']  #['medium'] 
+    model_configs = ['small', 'medium']  #['small']# , 'medium']  #['medium'] 
     num_random_seed = 5
     
     
     for model_config in model_configs:
+        
         # normal model
         is_race_permute = False 
         is_sex_permute =  False
@@ -649,6 +650,8 @@ if __name__ == '__main__':
             except Exception as e:
                 print (e)
         torch.cuda.empty_cache()
+        
+        
         
         # based on sym diff
         # duplicate sym diff and re-train
